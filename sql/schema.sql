@@ -195,3 +195,136 @@ create policy "flashcards_delete_own"
 on public.flashcards
 for delete
 using (auth.uid() = user_id);
+
+-- ============================================================
+-- Chat projects + recents
+-- ============================================================
+
+-- User-owned project folders for grouping conversations
+create table if not exists public.chat_projects (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null check (char_length(trim(name)) between 1 and 120),
+  description text,
+  color text,
+  is_archived boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_chat_projects_user_updated
+  on public.chat_projects (user_id, updated_at desc);
+
+create unique index if not exists idx_chat_projects_user_name_ci
+  on public.chat_projects (user_id, lower(name));
+
+create trigger trg_chat_projects_updated_at
+before update on public.chat_projects
+for each row execute function public.set_updated_at();
+
+-- Conversation threads: this table powers "Recents"
+create table if not exists public.chat_conversations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  project_id uuid references public.chat_projects(id) on delete set null,
+  title text not null check (char_length(trim(title)) between 1 and 200),
+  last_message_preview text,
+  last_activity_at timestamptz not null default now(),
+  is_archived boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_chat_conversations_user_recent
+  on public.chat_conversations (user_id, last_activity_at desc);
+
+create index if not exists idx_chat_conversations_user_project_recent
+  on public.chat_conversations (user_id, project_id, last_activity_at desc);
+
+create trigger trg_chat_conversations_updated_at
+before update on public.chat_conversations
+for each row execute function public.set_updated_at();
+
+-- Optional normalized message history per conversation
+create table if not exists public.chat_messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.chat_conversations(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role text not null check (role in ('system', 'user', 'assistant')),
+  content text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_chat_messages_conversation_created
+  on public.chat_messages (conversation_id, created_at asc);
+
+create trigger trg_chat_messages_updated_at
+before update on public.chat_messages
+for each row execute function public.set_updated_at();
+
+-- RLS
+alter table public.chat_projects enable row level security;
+alter table public.chat_conversations enable row level security;
+alter table public.chat_messages enable row level security;
+
+create policy "chat_projects_select_own"
+on public.chat_projects
+for select
+using (auth.uid() = user_id);
+
+create policy "chat_projects_insert_own"
+on public.chat_projects
+for insert
+with check (auth.uid() = user_id);
+
+create policy "chat_projects_update_own"
+on public.chat_projects
+for update
+using (auth.uid() = user_id);
+
+create policy "chat_projects_delete_own"
+on public.chat_projects
+for delete
+using (auth.uid() = user_id);
+
+create policy "chat_conversations_select_own"
+on public.chat_conversations
+for select
+using (auth.uid() = user_id);
+
+create policy "chat_conversations_insert_own"
+on public.chat_conversations
+for insert
+with check (auth.uid() = user_id);
+
+create policy "chat_conversations_update_own"
+on public.chat_conversations
+for update
+using (auth.uid() = user_id);
+
+create policy "chat_conversations_delete_own"
+on public.chat_conversations
+for delete
+using (auth.uid() = user_id);
+
+create policy "chat_messages_select_own"
+on public.chat_messages
+for select
+using (auth.uid() = user_id);
+
+create policy "chat_messages_insert_own"
+on public.chat_messages
+for insert
+with check (auth.uid() = user_id);
+
+create policy "chat_messages_update_own"
+on public.chat_messages
+for update
+using (auth.uid() = user_id);
+
+create policy "chat_messages_delete_own"
+on public.chat_messages
+for delete
+using (auth.uid() = user_id);

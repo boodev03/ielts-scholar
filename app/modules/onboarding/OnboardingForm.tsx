@@ -192,7 +192,7 @@ export default function OnboardingForm() {
       </div>
 
       {/* Card — height fits content */}
-      <div className="w-full rounded-[2rem] border border-[color:var(--color-outline-variant)]/35 bg-white/90 p-6 shadow-[0_30px_90px_rgba(0,69,50,0.12)] backdrop-blur sm:p-8">
+      <div className="w-full rounded-[2rem] border border-outline-variant/35 bg-white/90 p-6 shadow-[0_30px_90px_rgba(0,69,50,0.12)] backdrop-blur sm:p-8">
         {/* Heading */}
         <div className="mb-6">
           <h1
@@ -207,7 +207,7 @@ export default function OnboardingForm() {
         {/* Step 0 — Profile */}
         {step === 0 && (
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="space-y-1.5">
+            <div className="space-y-1.5">
               <span className="text-xs font-medium text-[#5b6460]">Display name</span>
               <Input
                 disabled={loading}
@@ -216,9 +216,9 @@ export default function OnboardingForm() {
                 className="h-11 rounded-xl border-[#d6ddda] bg-[#f8faf9] px-3 text-sm focus-visible:ring-[#5ec07e]/40"
               />
               <p className="text-xs text-red-500">{form.formState.errors.displayName?.message}</p>
-            </label>
+            </div>
 
-            <label className="space-y-1.5">
+            <div className="space-y-1.5">
               <span className="text-xs font-medium text-[#5b6460]">Native language</span>
               <Input
                 disabled={loading}
@@ -227,14 +227,14 @@ export default function OnboardingForm() {
                 className="h-11 rounded-xl border-[#d6ddda] bg-[#f8faf9] px-3 text-sm focus-visible:ring-[#5ec07e]/40"
               />
               <p className="text-xs text-red-500">{form.formState.errors.nativeLanguage?.message}</p>
-            </label>
+            </div>
           </div>
         )}
 
         {/* Step 1 — Goals */}
         {step === 1 && (
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="space-y-1.5">
+            <div className="space-y-1.5">
               <span className="text-xs font-medium text-[#5b6460]">Target band</span>
               <Input
                 disabled={loading}
@@ -246,9 +246,9 @@ export default function OnboardingForm() {
                 className="h-12 rounded-xl border-[#d6ddda] bg-[#f8faf9] px-3 text-sm focus-visible:ring-[#5ec07e]/40"
               />
               <p className="text-xs text-red-500">{form.formState.errors.targetBand?.message}</p>
-            </label>
+            </div>
 
-            <label className="space-y-1.5">
+            <div className="space-y-1.5">
               <span className="text-xs font-medium text-[#5b6460]">Level</span>
               <Select
                 disabled={loading}
@@ -273,7 +273,7 @@ export default function OnboardingForm() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-red-500">{form.formState.errors.proficiencyLevel?.message}</p>
-            </label>
+            </div>
 
           </div>
         )}
@@ -281,7 +281,7 @@ export default function OnboardingForm() {
         {/* Step 2 — Study habits */}
         {step === 2 && (
           <div className="space-y-5">
-            <label className="space-y-1.5">
+            <div className="space-y-1.5">
               <span className="text-xs font-medium text-[#5b6460]">Study minutes per day</span>
               <Input
                 disabled={loading}
@@ -292,7 +292,7 @@ export default function OnboardingForm() {
                 className="h-11 rounded-xl border-[#d6ddda] bg-[#f8faf9] px-3 text-sm focus-visible:ring-[#5ec07e]/40"
               />
               <p className="text-xs text-red-500">{form.formState.errors.studyMinutesPerDay?.message}</p>
-            </label>
+            </div>
 
             <div className="space-y-2">
               <p className="text-xs font-medium text-[#5b6460]">Focus skills (up to 4)</p>

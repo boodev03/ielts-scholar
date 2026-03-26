@@ -38,3 +38,37 @@ export type Flashcard = {
   created_at: string;
   updated_at: string;
 };
+
+export type ChatProject = {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ChatConversation = {
+  id: string;
+  user_id: string;
+  project_id: string | null;
+  title: string;
+  last_message_preview: string | null;
+  last_activity_at: string;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  role: "system" | "user" | "assistant";
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};

@@ -63,7 +63,6 @@ input[type="number"] {
 }
 
 @theme inline {
-  --font-heading:               var(--font-mono);
   --font-mono:               var(--font-mono);
   --color-sidebar-ring:               var(--sidebar-ring);
   --color-sidebar-border:               var(--sidebar-border);
@@ -184,4 +183,17 @@ input[type="number"] {
   html {
     @apply font-mono;
   }
+}
+
+@keyframes landing-marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.landing-marquee-track {
+  animation: landing-marquee 26s linear infinite;
 }
