@@ -3,10 +3,13 @@
 import { useMemo, useState } from "react";
 import Image from "next/image";
 import {
+  Cards,
   DotsThree,
   FolderSimple,
   FolderSimplePlus,
   MagnifyingGlass,
+  MicrophoneStage,
+  NotePencil,
   PencilSimpleLine,
   Sidebar as SidebarIcon,
 } from "@phosphor-icons/react";
@@ -195,26 +198,81 @@ function SidebarInner() {
         <SidebarGroup className="pt-0">
           <SidebarGroupContent>
             <SidebarMenu className="gap-0.5">
-              {[
-                { label: "New chat", icon: PencilSimpleLine },
-                { label: "Search chats", icon: MagnifyingGlass },
-                { label: "More", icon: DotsThree },
-              ].map(({ label, icon: Icon }, idx) => (
-                <SidebarMenuItem key={label}>
-                  <SidebarMenuButton
-                    tooltip={label}
-                    onClick={idx === 0 ? () => void handleStartNewChat() : undefined}
-                    className={`h-9 rounded-lg px-2.5 text-sm font-medium ${
-                      idx === 0
-                        ? "bg-primary-container text-primary"
-                        : "text-on-surface hover:bg-surface-container-low"
-                    }`}
-                  >
-                    <Icon size={17} weight="bold" />
-                    <span className="truncate">{label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="New chat"
+                  onClick={() => void handleStartNewChat()}
+                  className="h-9 rounded-lg px-2.5 text-sm font-medium bg-primary-container text-primary"
+                >
+                  <PencilSimpleLine size={17} weight="bold" />
+                  <span className="truncate">New chat</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="Search chats"
+                  className="h-9 rounded-lg px-2.5 text-sm font-medium text-on-surface hover:bg-surface-container-low"
+                >
+                  <MagnifyingGlass size={17} weight="bold" />
+                  <span className="truncate">Search chats</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="My Vocabulary"
+                  onClick={() => router.push("/vocabulary")}
+                  className={`h-9 rounded-lg px-2.5 text-sm font-medium ${
+                    pathname?.startsWith("/vocabulary")
+                      ? "bg-surface-container text-on-surface"
+                      : "text-on-surface hover:bg-surface-container-low"
+                  }`}
+                >
+                  <Cards size={17} weight="bold" />
+                  <span className="truncate">My Vocabulary</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="Writing Practice"
+                  onClick={() => router.push("/writing-practice")}
+                  className={`h-9 rounded-lg px-2.5 text-sm font-medium ${
+                    pathname?.startsWith("/writing-practice")
+                      ? "bg-surface-container text-on-surface"
+                      : "text-on-surface hover:bg-surface-container-low"
+                  }`}
+                >
+                  <NotePencil size={17} weight="bold" />
+                  <span className="truncate">Writing Practice</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="Speaking Room"
+                  onClick={() => router.push("/speaking")}
+                  className={`h-9 rounded-lg px-2.5 text-sm font-medium ${
+                    pathname?.startsWith("/speaking")
+                      ? "bg-surface-container text-on-surface"
+                      : "text-on-surface hover:bg-surface-container-low"
+                  }`}
+                >
+                  <MicrophoneStage size={17} weight="bold" />
+                  <span className="truncate">Speaking Room</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="More"
+                  className="h-9 rounded-lg px-2.5 text-sm font-medium text-on-surface hover:bg-surface-container-low"
+                >
+                  <DotsThree size={17} weight="bold" />
+                  <span className="truncate">More</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

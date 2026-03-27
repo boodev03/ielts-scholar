@@ -328,3 +328,15 @@ create policy "chat_messages_delete_own"
 on public.chat_messages
 for delete
 using (auth.uid() = user_id);
+
+-- ============================================================
+-- Vocabulary enrichment (2026-03-27)
+-- Run this block after the initial schema above is applied.
+-- ============================================================
+
+-- Add rich dictionary columns to vocabulary_items.
+-- `translation` and `source_text` already exist from the initial schema.
+alter table public.vocabulary_items
+  add column if not exists ipa text,
+  add column if not exists entries jsonb not null default '[]'::jsonb,
+  add column if not exists notes text[] not null default '{}'::text[];

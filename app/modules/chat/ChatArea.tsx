@@ -30,6 +30,10 @@ import {
   useCreateMessageMutation,
   useTouchConversationMutation,
 } from "@/hooks/api/use-chat";
+import {
+  useSaveVocabularyMutation,
+  vocabularyQueryKeys,
+} from "@/hooks/api/use-vocabulary";
 import { buildConversationTitle } from "@/lib/chat";
 
 type MessageLike = {
@@ -131,10 +135,8 @@ function buildMessagePreview(text: string) {
 }
 
 export default function ChatArea({
-  onAddFlashcard,
   conversationId,
 }: {
-  onAddFlashcard: (word: string) => boolean;
   conversationId?: string | null;
 }) {
   const [input, setInput] = useState("");
@@ -143,9 +145,11 @@ export default function ChatArea({
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupTranslation, setLookupTranslation] = useState<string | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const [isSavingFlashcard, setIsSavingFlashcard] = useState(false);
 
   const router = useRouter();
   const queryClient = useQueryClient();
+  const saveVocabularyMutation = useSaveVocabularyMutation();
   const createConversationMutation = useCreateConversationMutation();
   const touchConversationMutation = useTouchConversationMutation();
   const createMessageMutation = useCreateMessageMutation();
@@ -443,17 +447,72 @@ export default function ChatArea({
     }
   };
 
-  const addToFlashcard = () => {
-    if (!lookupAnchor?.text) return;
+  const addToFlashcard = async () => {
+    if (!lookupAnchor?.text || isSavingFlashcard) return;
 
     const normalized = lookupAnchor.text.trim().replace(/\s+/g, " ");
     if (!normalized) return;
 
-    const added = onAddFlashcard(normalized);
-    if (added) {
-      toast.success(`Added "${normalized}" to flashcards.`);
-    } else {
-      toast.warning(`"${normalized}" is already in your flashcards.`);
+    setIsSavingFlashcard(true);
+    try {
+      // 1. Fetch rich dictionary data (IPA, meanings, examples, part of speech)
+      let dictPayload: {
+        ipa?: string;
+        translation?: string;
+        entries: Array<{
+          partOfSpeech: string;
+          translation: string;
+          meanings: string[];
+          examples: string[];
+        }>;
+        notes: string[];
+      } = { entries: [], notes: [] };
+
+      try {
+        const dictRes = await fetch("/api/dictionary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: normalized, targetLanguage: "Vietnamese" }),
+        });
+        if (dictRes.ok) {
+          const d = await dictRes.json() as {
+            ipa?: string;
+            globalTranslation?: string;
+            entries?: typeof dictPayload.entries;
+            notes?: string[];
+          };
+          dictPayload = {
+            ipa: d.ipa || undefined,
+            translation: d.globalTranslation || undefined,
+            entries: d.entries ?? [],
+            notes: d.notes ?? [],
+          };
+        }
+      } catch {
+        // dictionary enrichment is best-effort; save proceeds with minimal data
+      }
+
+      // 2. Persist to Supabase
+      const result = await saveVocabularyMutation.mutateAsync({
+        term: normalized,
+        ...dictPayload,
+      });
+
+      if (!result.success) {
+        toast.error("Failed to save word to flashcards.");
+        return;
+      }
+
+      if (result.data.created) {
+        toast.success(`"${normalized}" added to flashcards.`);
+      } else {
+        toast.info(`"${normalized}" is already in your flashcards.`);
+      }
+
+      // 3. Invalidate the vocabulary list so LearningInsights refreshes
+      await queryClient.invalidateQueries({ queryKey: vocabularyQueryKeys.list });
+    } finally {
+      setIsSavingFlashcard(false);
     }
   };
 
@@ -546,9 +605,10 @@ export default function ChatArea({
                     variant="ghost"
                     size="icon"
                     className="size-8 rounded-lg"
-                    onClick={addToFlashcard}
+                    disabled={isSavingFlashcard}
+                    onClick={() => void addToFlashcard()}
                   >
-                    <Star size={16} weight="bold" />
+                    <Star size={16} weight={isSavingFlashcard ? "regular" : "bold"} className={isSavingFlashcard ? "animate-pulse" : ""} />
                   </Button>
                   <div className="ml-auto" />
                   <Button

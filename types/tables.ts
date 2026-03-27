@@ -14,13 +14,22 @@ export type UserProfile = {
   updated_at: string;
 };
 
+export type DictionaryEntry = {
+  partOfSpeech: string;
+  translation: string;
+  meanings: string[];
+  examples: string[];
+};
+
 export type VocabularyItem = {
   id: string;
   user_id: string;
   term: string;
   source_text: string | null;
+  ipa: string | null;
   translation: string | null;
-  metadata: Record<string, unknown>;
+  entries: DictionaryEntry[];
+  notes: string[];
   created_at: string;
   updated_at: string;
 };

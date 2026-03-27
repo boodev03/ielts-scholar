@@ -1,7 +1,6 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useState } from "react";
 import Sidebar from "../layouts/Sidebar";
 import LearningInsights from "../modules/chat/LearningInsights";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -12,25 +11,6 @@ export default function ChatScreen({
 }: {
   conversationId?: string | null;
 }) {
-  const [flashcardWords, setFlashcardWords] = useState<string[]>([]);
-
-  const handleAddFlashcard = (word: string) => {
-    const normalized = word.trim();
-    if (!normalized) return false;
-
-    let added = false;
-    setFlashcardWords((prev) => {
-      const exists = prev.some(
-        (item) => item.toLowerCase() === normalized.toLowerCase()
-      );
-      if (exists) return prev;
-      added = true;
-      return [normalized, ...prev];
-    });
-
-    return added;
-  };
-
   return (
     <SidebarProvider
       style={
@@ -46,8 +26,8 @@ export default function ChatScreen({
         style={{ backgroundColor: "var(--color-surface)" }}
       >
         <Sidebar />
-        <ChatArea onAddFlashcard={handleAddFlashcard} conversationId={conversationId} />
-        <LearningInsights flashcardWords={flashcardWords} />
+        <ChatArea conversationId={conversationId} />
+        <LearningInsights />
       </div>
     </SidebarProvider>
   );
