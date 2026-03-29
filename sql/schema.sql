@@ -340,3 +340,75 @@ alter table public.vocabulary_items
   add column if not exists ipa text,
   add column if not exists entries jsonb not null default '[]'::jsonb,
   add column if not exists notes text[] not null default '{}'::text[];
+
+-- ============================================================
+-- NEW SQL (2026-03-27) - COPY & RUN THIS BLOCK
+-- Writing attempts for adaptive scoring + progress dashboard + speaking reports
+-- ============================================================
+
+create table if not exists public.writing_practice_attempts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  exercise_mode text not null check (
+    exercise_mode in ('sentence-translation', 'topic-writing', 'speaking-live')
+  ),
+  overall_accuracy numeric(5,2) not null check (overall_accuracy between 0 and 100),
+  band_score numeric(2,1) not null check (band_score between 0 and 9),
+  criterion_scores jsonb not null default '[]'::jsonb,
+  meta jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_writing_attempts_user_created
+  on public.writing_practice_attempts (user_id, created_at desc);
+
+drop trigger if exists trg_writing_attempts_updated_at on public.writing_practice_attempts;
+create trigger trg_writing_attempts_updated_at
+before update on public.writing_practice_attempts
+for each row execute function public.set_updated_at();
+
+alter table public.writing_practice_attempts enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'writing_practice_attempts'
+      and policyname = 'writing_attempts_select_own'
+  ) then
+    create policy "writing_attempts_select_own"
+    on public.writing_practice_attempts
+    for select
+    using (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'writing_practice_attempts'
+      and policyname = 'writing_attempts_insert_own'
+  ) then
+    create policy "writing_attempts_insert_own"
+    on public.writing_practice_attempts
+    for insert
+    with check (auth.uid() = user_id);
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint where conname = 'writing_practice_attempts_exercise_mode_check'
+  ) then
+    alter table public.writing_practice_attempts
+      drop constraint writing_practice_attempts_exercise_mode_check;
+  end if;
+
+  alter table public.writing_practice_attempts
+    add constraint writing_practice_attempts_exercise_mode_check
+    check (exercise_mode in ('sentence-translation', 'topic-writing', 'speaking-live'));
+end $$;

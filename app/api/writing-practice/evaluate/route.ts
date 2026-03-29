@@ -1,17 +1,40 @@
 import { google } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { z } from "zod";
+import {
+  bandFromAccuracy,
+  normalizeCriterionScores,
+  topWeakCriteria,
+  weightedAccuracy,
+} from "@/lib/writing/scoring";
 
 const requestSchema = z.object({
   sourceSentence: z.string().trim().min(2).max(500),
   userTranslation: z.string().trim().min(1).max(500),
   nativeLanguage: z.string().trim().min(2).max(40),
+  adaptiveContext: z
+    .object({
+      weakCriteria: z.array(z.string()).max(4).optional(),
+    })
+    .optional(),
 });
 
 const responseSchema = z.object({
   correctedTranslation: z.string(),
-  accuracy: z.number().min(0).max(100),
-  bandScore: z.number().min(0).max(9),
+  criteria: z
+    .array(
+      z.object({
+        key: z.enum([
+          "semantic_accuracy",
+          "grammar_control",
+          "lexical_choice",
+          "naturalness",
+        ]),
+        score: z.number().min(0).max(100),
+        comment: z.string(),
+      })
+    )
+    .length(4),
   strengths: z.array(z.string()).max(4).default([]),
   improvements: z.array(z.string()).max(4).default([]),
   briefExplanation: z.string(),
@@ -35,7 +58,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { sourceSentence, userTranslation, nativeLanguage } = parsed.data;
+  const { sourceSentence, userTranslation, nativeLanguage, adaptiveContext } = parsed.data;
 
   const { object } = await generateObject({
     model: google("gemini-2.5-pro"),
@@ -45,18 +68,34 @@ export async function POST(req: Request) {
       "Evaluate semantic accuracy, grammar, lexical choice, and naturalness.",
       "Keep feedback concise and practical.",
       "Corrected translation must be idiomatic English.",
+      "Return all four criteria exactly once.",
     ].join("\n"),
     prompt: [
       `Source sentence in native language (${nativeLanguage}): ${sourceSentence}`,
       `User English translation: ${userTranslation}`,
+      adaptiveContext?.weakCriteria?.length
+        ? `Learner weak criteria from recent history: ${adaptiveContext.weakCriteria.join(", ")}`
+        : "No prior learner profile available.",
       "Scoring rules:",
-      "- accuracy: 0-100 (meaning preservation + grammar + naturalness)",
-      "- bandScore: IELTS-like estimate (0-9)",
+      "- criteria scores: 0-100 for each criterion",
       "- strengths: what user did right",
       "- improvements: specific fixes with focus on actionable changes",
       "- briefExplanation: 1-2 short sentences",
     ].join("\n"),
   });
 
-  return Response.json(object);
+  const criteria = normalizeCriterionScores("sentence-translation", object.criteria);
+  const accuracy = weightedAccuracy(criteria);
+  const bandScore = bandFromAccuracy(accuracy);
+
+  return Response.json({
+    correctedTranslation: object.correctedTranslation,
+    criteria,
+    accuracy,
+    bandScore,
+    strengths: object.strengths,
+    improvements: object.improvements,
+    briefExplanation: object.briefExplanation,
+    focusAreas: topWeakCriteria(criteria, 2),
+  });
 }

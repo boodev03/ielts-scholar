@@ -1,6 +1,5 @@
-import SpeakingRoomScreen from "@/app/modules/speaking/SpeakingRoomScreen";
+import SpeakingScreen from "@/app/modules/speaking/SpeakingScreen";
 
 export default function SpeakingPage() {
-  return <SpeakingRoomScreen />;
+  return <SpeakingScreen />;
 }
-

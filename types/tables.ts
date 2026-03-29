@@ -81,3 +81,21 @@ export type ChatMessage = {
   created_at: string;
   updated_at: string;
 };
+
+export type WritingPracticeAttempt = {
+  id: string;
+  user_id: string;
+  exercise_mode: "sentence-translation" | "topic-writing" | "speaking-live";
+  overall_accuracy: number;
+  band_score: number;
+  criterion_scores: Array<{
+    key: string;
+    label: string;
+    score: number;
+    weight: number;
+    comment: string;
+  }>;
+  meta: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};

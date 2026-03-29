@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Image from "next/image";
 import {
   Cards,
+  ChartLineUp,
   DotsThree,
   FolderSimple,
   FolderSimplePlus,
@@ -12,6 +13,8 @@ import {
   NotePencil,
   PencilSimpleLine,
   Sidebar as SidebarIcon,
+  CaretDown,
+  Sparkle,
 } from "@phosphor-icons/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
@@ -81,6 +84,14 @@ function SidebarInner() {
   const activeConversationId = pathname?.startsWith("/chat/")
     ? pathname.split("/")[2] ?? null
     : null;
+  const isPracticeRoute = Boolean(
+    pathname?.startsWith("/vocabulary") ||
+      pathname?.startsWith("/writing-practice") ||
+      pathname?.startsWith("/speaking") ||
+      pathname?.startsWith("/progress")
+  );
+  const [practiceToolsManualOpen, setPracticeToolsManualOpen] = useState(!collapsed);
+  const practiceToolsOpen = isPracticeRoute || practiceToolsManualOpen;
 
   const projects = useMemo(
     () => (data?.success ? data.data.projects : []),
@@ -221,58 +232,96 @@ function SidebarInner() {
 
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  tooltip="My Vocabulary"
-                  onClick={() => router.push("/vocabulary")}
+                  tooltip="Practice Tools"
+                  onClick={() => {
+                    if (collapsed) {
+                      toggleSidebar();
+                      setPracticeToolsManualOpen(true);
+                      return;
+                    }
+                    setPracticeToolsManualOpen((prev) => !prev);
+                  }}
                   className={`h-9 rounded-lg px-2.5 text-sm font-medium ${
-                    pathname?.startsWith("/vocabulary")
+                    isPracticeRoute
                       ? "bg-surface-container text-on-surface"
                       : "text-on-surface hover:bg-surface-container-low"
                   }`}
                 >
-                  <Cards size={17} weight="bold" />
-                  <span className="truncate">My Vocabulary</span>
+                  <Sparkle size={17} weight="bold" />
+                  <span className="truncate">Practice Tools</span>
+                  {!collapsed ? (
+                    <CaretDown
+                      size={14}
+                      weight="bold"
+                      className={`ml-auto transition-transform ${practiceToolsOpen ? "rotate-180" : ""}`}
+                    />
+                  ) : null}
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip="Writing Practice"
-                  onClick={() => router.push("/writing-practice")}
-                  className={`h-9 rounded-lg px-2.5 text-sm font-medium ${
-                    pathname?.startsWith("/writing-practice")
-                      ? "bg-surface-container text-on-surface"
-                      : "text-on-surface hover:bg-surface-container-low"
-                  }`}
-                >
-                  <NotePencil size={17} weight="bold" />
-                  <span className="truncate">Writing Practice</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {!collapsed && practiceToolsOpen ? (
+                <>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      tooltip="My Vocabulary"
+                      onClick={() => router.push("/vocabulary")}
+                      className={`h-8 rounded-lg px-2.5 pl-9 text-sm font-medium ${
+                        pathname?.startsWith("/vocabulary")
+                          ? "bg-surface-container text-on-surface"
+                          : "text-on-surface hover:bg-surface-container-low"
+                      }`}
+                    >
+                      <Cards size={15} weight="bold" />
+                      <span className="truncate">My Vocabulary</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
 
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip="Speaking Room"
-                  onClick={() => router.push("/speaking")}
-                  className={`h-9 rounded-lg px-2.5 text-sm font-medium ${
-                    pathname?.startsWith("/speaking")
-                      ? "bg-surface-container text-on-surface"
-                      : "text-on-surface hover:bg-surface-container-low"
-                  }`}
-                >
-                  <MicrophoneStage size={17} weight="bold" />
-                  <span className="truncate">Speaking Room</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      tooltip="Writing Practice"
+                      onClick={() => router.push("/writing-practice")}
+                      className={`h-8 rounded-lg px-2.5 pl-9 text-sm font-medium ${
+                        pathname?.startsWith("/writing-practice")
+                          ? "bg-surface-container text-on-surface"
+                          : "text-on-surface hover:bg-surface-container-low"
+                      }`}
+                    >
+                      <NotePencil size={15} weight="bold" />
+                      <span className="truncate">Writing Practice</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
 
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip="More"
-                  className="h-9 rounded-lg px-2.5 text-sm font-medium text-on-surface hover:bg-surface-container-low"
-                >
-                  <DotsThree size={17} weight="bold" />
-                  <span className="truncate">More</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      tooltip="Speaking"
+                      onClick={() => router.push("/speaking")}
+                      className={`h-8 rounded-lg px-2.5 pl-9 text-sm font-medium ${
+                        pathname?.startsWith("/speaking")
+                          ? "bg-surface-container text-on-surface"
+                          : "text-on-surface hover:bg-surface-container-low"
+                      }`}
+                    >
+                      <MicrophoneStage size={15} weight="bold" />
+                      <span className="truncate">Speaking</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      tooltip="Progress"
+                      onClick={() => router.push("/progress")}
+                      className={`h-8 rounded-lg px-2.5 pl-9 text-sm font-medium ${
+                        pathname?.startsWith("/progress")
+                          ? "bg-surface-container text-on-surface"
+                          : "text-on-surface hover:bg-surface-container-low"
+                      }`}
+                    >
+                      <ChartLineUp size={15} weight="bold" />
+                      <span className="truncate">Progress</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </>
+              ) : null}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

@@ -6,9 +6,6 @@ import Image from "next/image";
 import {
   Microphone,
   PhoneDisconnect,
-  PlayCircle,
-  RadioButton,
-  Sparkle,
 } from "@phosphor-icons/react";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { toast } from "sonner";
@@ -16,24 +13,46 @@ import Sidebar from "@/app/layouts/Sidebar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
 import { SidebarProvider } from "@/components/ui/sidebar";
-
-type SpeakingLevel = "beginner" | "intermediate" | "advanced";
 
 type TranscriptItem = {
   id: string;
   role: "user" | "assistant" | "system";
   text: string;
   ts: number;
+  audioUrl?: string;
 };
+
+type SpeakingFeedback = {
+  criteria: Array<{
+    key: string;
+    label: string;
+    score: number;
+    weight: number;
+    comment: string;
+  }>;
+  accuracy: number;
+  bandScore: number;
+  strengths: string[];
+  improvements: string[];
+  nextDrills: string[];
+  briefExplanation: string;
+};
+
+function isSpeakingFeedback(payload: unknown): payload is SpeakingFeedback {
+  if (typeof payload !== "object" || payload === null) return false;
+  const item = payload as Partial<SpeakingFeedback>;
+  return (
+    typeof item.accuracy === "number" &&
+    typeof item.bandScore === "number" &&
+    Array.isArray(item.criteria) &&
+    Array.isArray(item.strengths) &&
+    Array.isArray(item.improvements) &&
+    Array.isArray(item.nextDrills) &&
+    typeof item.briefExplanation === "string"
+  );
+}
 
 function floatToPcm16(float32: Float32Array) {
   const out = new Int16Array(float32.length);
@@ -86,17 +105,68 @@ function base64ToPcm16(base64: string) {
   return new Int16Array(bytes.buffer);
 }
 
+function pcm16ChunksToWavBlob(chunks: Int16Array[], sampleRate: number) {
+  const totalSamples = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  if (totalSamples === 0) return null;
+
+  const bytesPerSample = 2;
+  const dataSize = totalSamples * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  const writeAscii = (offset: number, value: string) => {
+    for (let i = 0; i < value.length; i += 1) {
+      view.setUint8(offset + i, value.charCodeAt(i));
+    }
+  };
+
+  writeAscii(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeAscii(8, "WAVE");
+  writeAscii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * bytesPerSample, true);
+  view.setUint16(32, bytesPerSample, true);
+  view.setUint16(34, 16, true);
+  writeAscii(36, "data");
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (const chunk of chunks) {
+    for (let i = 0; i < chunk.length; i += 1) {
+      view.setInt16(offset, chunk[i] ?? 0, true);
+      offset += 2;
+    }
+  }
+
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
 export default function SpeakingRoomScreen() {
-  const [topic, setTopic] = useState("");
-  const [level, setLevel] = useState<SpeakingLevel>("intermediate");
+  return <SpeakingRoomScreenInner />;
+}
+
+type SpeakingRoomScreenProps = {
+  embedded?: boolean;
+};
+
+export function SpeakingRoomScreenInner({ embedded = false }: SpeakingRoomScreenProps = {}) {
+  const [screen, setScreen] = useState<"ready" | "live">("ready");
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
+  const [lastFeedback, setLastFeedback] = useState<SpeakingFeedback | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
 
   const sessionRef = useRef<Awaited<ReturnType<GoogleGenAI["live"]["connect"]>> | null>(null);
   const isClosingRef = useRef(false);
   const isSessionReadyRef = useRef(false);
+  const isEvaluatingRef = useRef(false);
+  const sessionStartedAtRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const micContextRef = useRef<AudioContext | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -104,24 +174,26 @@ export default function SpeakingRoomScreen() {
   const playheadRef = useRef(0);
   const assistantTurnIdRef = useRef<string | null>(null);
   const userTurnIdRef = useRef<string | null>(null);
+  const userAudioChunksRef = useRef<Record<string, Int16Array[]>>({});
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
+  const transcriptRef = useRef<TranscriptItem[]>([]);
 
-  const sessionStatus = useMemo(() => {
-    if (isConnecting) return "Connecting";
-    if (isConnected && isMicOn) return "Live (mic on)";
-    if (isConnected) return "Connected";
-    return "Idle";
-  }, [isConnecting, isConnected, isMicOn]);
+  const conversationItems = useMemo(
+    () => transcript.filter((item) => item.role !== "system"),
+    [transcript]
+  );
 
-  const mascotMessage = useMemo(() => {
-    if (isConnecting) return "Connecting to Gemini Live room...";
-    if (!isConnected) return "I am ready. Connect room and we start speaking.";
-    if (isMicOn) return "Great. I can hear you. Let us practice naturally.";
-    return "Room connected. Turn on your mic when you are ready.";
-  }, [isConnecting, isConnected, isMicOn]);
+  const speakingTurns = useMemo(
+    () => transcript.filter((item) => item.role === "user" || item.role === "assistant"),
+    [transcript]
+  );
 
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [transcript]);
+
+  useEffect(() => {
+    transcriptRef.current = transcript;
   }, [transcript]);
 
   const pushTranscript = (item: Omit<TranscriptItem, "id" | "ts">) => {
@@ -137,6 +209,18 @@ export default function SpeakingRoomScreen() {
     ]);
   };
 
+  const finalizeUserTurnAudio = (turnId: string) => {
+    const chunks = userAudioChunksRef.current[turnId];
+    if (!chunks || chunks.length === 0) return;
+    const blob = pcm16ChunksToWavBlob(chunks, 16000);
+    delete userAudioChunksRef.current[turnId];
+    if (!blob) return;
+    const audioUrl = URL.createObjectURL(blob);
+    setTranscript((prev) =>
+      prev.map((item) => (item.id === turnId ? { ...item, audioUrl } : item)),
+    );
+  };
+
   // Appends a transcription chunk to the current turn bubble, or starts a new one.
   const upsertTranscript = (role: "user" | "assistant", chunk: string) => {
     const idRef = role === "assistant" ? assistantTurnIdRef : userTurnIdRef;
@@ -149,11 +233,17 @@ export default function SpeakingRoomScreen() {
     } else {
       const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       idRef.current = id;
+      if (role === "user") {
+        userAudioChunksRef.current[id] = [];
+      }
       setTranscript((prev) => [...prev, { id, role, text: chunk, ts: Date.now() }]);
     }
   };
 
   const sealTurns = () => {
+    if (userTurnIdRef.current) {
+      finalizeUserTurnAudio(userTurnIdRef.current);
+    }
     assistantTurnIdRef.current = null;
     userTurnIdRef.current = null;
   };
@@ -216,6 +306,13 @@ export default function SpeakingRoomScreen() {
       const raw = event.inputBuffer.getChannelData(0);
       const down = downsample(raw, ctx.sampleRate, 16000);
       const pcm = floatToPcm16(down);
+      const activeUserTurnId = userTurnIdRef.current;
+      if (activeUserTurnId) {
+        const chunks = userAudioChunksRef.current[activeUserTurnId];
+        if (chunks) {
+          chunks.push(pcm);
+        }
+      }
       const data = pcm16ToBase64(pcm);
       try {
         sessionRef.current.sendRealtimeInput({
@@ -232,7 +329,59 @@ export default function SpeakingRoomScreen() {
     setIsMicOn(true);
   };
 
+  const evaluateAndPersistSession = async (snapshot: TranscriptItem[]) => {
+    const turns = snapshot.filter((item) => item.role === "user" || item.role === "assistant");
+    const userTurns = turns.filter((item) => item.role === "user");
+    if (userTurns.length === 0 || isEvaluatingRef.current) return;
+
+    const durationSec =
+      sessionStartedAtRef.current !== null
+        ? Math.max(0, Math.round((Date.now() - sessionStartedAtRef.current) / 1000))
+        : undefined;
+
+    isEvaluatingRef.current = true;
+    setFeedbackLoading(true);
+    try {
+      const evaluateRes = await fetch("/api/speaking/evaluate-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcript: turns.map((item) => ({ role: item.role, text: item.text })),
+          durationSec,
+        }),
+      });
+      const evaluateJson: unknown = await evaluateRes.json();
+      if (!evaluateRes.ok || !isSpeakingFeedback(evaluateJson)) {
+        return;
+      }
+
+      setLastFeedback(evaluateJson);
+
+      await fetch("/api/writing-practice/progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          exerciseMode: "speaking-live",
+          accuracy: evaluateJson.accuracy,
+          bandScore: evaluateJson.bandScore,
+          criteria: evaluateJson.criteria,
+          meta: {
+            turns: turns.length,
+            durationSec: durationSec ?? null,
+          },
+        }),
+      });
+    } catch {
+      // Best-effort post-session report.
+    } finally {
+      setFeedbackLoading(false);
+      isEvaluatingRef.current = false;
+    }
+  };
+
   const disconnectSession = () => {
+    const snapshot = transcriptRef.current;
+    void evaluateAndPersistSession(snapshot);
     isClosingRef.current = true;
     isSessionReadyRef.current = false;
     stopMic();
@@ -240,6 +389,7 @@ export default function SpeakingRoomScreen() {
     sessionRef.current = null;
     setIsConnected(false);
     setIsConnecting(false);
+    setScreen("ready");
     setTimeout(() => {
       isClosingRef.current = false;
     }, 0);
@@ -251,7 +401,7 @@ export default function SpeakingRoomScreen() {
       const tokenRes = await fetch("/api/speaking/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ level, topic: topic.trim() || undefined }),
+        body: JSON.stringify({}),
       });
       const tokenJson = (await tokenRes.json()) as {
         token?: string;
@@ -264,6 +414,12 @@ export default function SpeakingRoomScreen() {
       }
 
       const ai = new GoogleGenAI({ apiKey: tokenJson.token, httpOptions: { apiVersion: "v1alpha" } });
+      sessionStartedAtRef.current = Date.now();
+      for (const item of transcriptRef.current) {
+        if (item.audioUrl) URL.revokeObjectURL(item.audioUrl);
+      }
+      setTranscript([]);
+      userAudioChunksRef.current = {};
       const session = await ai.live.connect({
         model: tokenJson.model,
         config: {
@@ -316,6 +472,8 @@ export default function SpeakingRoomScreen() {
             toast.error(message);
           },
           onclose: (event) => {
+            const snapshot = transcriptRef.current;
+            void evaluateAndPersistSession(snapshot);
             isSessionReadyRef.current = false;
             stopMic();
             sessionRef.current = null;
@@ -327,6 +485,7 @@ export default function SpeakingRoomScreen() {
               pushTranscript({ role: "system", text: "Session ended." });
               return;
             }
+            setScreen("ready");
             pushTranscript({ role: "system", text: `Session ended (${details}).` });
           },
         },
@@ -344,26 +503,32 @@ export default function SpeakingRoomScreen() {
       sessionRef.current?.sendRealtimeInput({
         text: "Please greet the student and ask the first IELTS speaking question.",
       });
+      return true;
     } catch (error) {
       isSessionReadyRef.current = false;
       setIsConnecting(false);
       setIsConnected(false);
       toast.error(error instanceof Error ? error.message : "Unable to connect.");
+      return false;
     }
   };
 
-  const sendKickoff = () => {
-    if (!sessionRef.current) return;
-    const prompt = [
-      `Start IELTS speaking practice at ${level} level.`,
-      `Topic focus: ${topic.trim() || "random IELTS topic"}.`,
-      "Ask the first question now.",
-    ].join("\n");
-    sessionRef.current.sendRealtimeInput({ text: prompt });
+  const handleStartSpeaking = async () => {
+    if (isConnected) {
+      setScreen("live");
+      return;
+    }
+    const connected = await connectSession();
+    if (connected) {
+      setScreen("live");
+    }
   };
 
   useEffect(() => {
     return () => {
+      for (const item of transcriptRef.current) {
+        if (item.audioUrl) URL.revokeObjectURL(item.audioUrl);
+      }
       isClosingRef.current = true;
       isSessionReadyRef.current = false;
       stopMic();
@@ -375,6 +540,184 @@ export default function SpeakingRoomScreen() {
       }
     };
   }, []);
+
+  const content = (
+    <>
+      {screen === "ready" ? (
+            <Card className="mx-auto flex h-full w-full max-w-5xl flex-col items-center justify-center rounded-3xl border-outline-variant/30 bg-surface-container-lowest px-6 py-12 text-center">
+              <div className="relative mb-6 grid h-36 w-36 place-items-center rounded-full border border-outline-variant/35 bg-white shadow-[0_16px_34px_rgba(25,28,30,0.12)]">
+                <Image src="/logo.png" alt="AI Mascot" fill className="rounded-full object-cover" />
+              </div>
+              <h1 className="text-6xl font-semibold text-[#161f39]" style={{ fontFamily: "var(--font-display)" }}>
+                Ready to start?
+              </h1>
+              <p className="mt-3 text-2xl text-[#4d5c79]">
+                Your AI examiner is prepared to guide you through
+              </p>
+              <div className="mt-7 flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className={`size-14 rounded-full ${isMicOn ? "border-emerald-300 text-emerald-700" : ""}`}
+                  disabled={!isConnected && isConnecting}
+                  onClick={() => void (isMicOn ? stopMic() : startMic())}
+                >
+                  <Microphone size={20} weight="fill" />
+                </Button>
+                <Button
+                  type="button"
+                  disabled={isConnecting}
+                  onClick={() => void handleStartSpeaking()}
+                  className="h-14 rounded-full bg-[linear-gradient(135deg,#111a33,#2f3b61)] px-10 text-lg font-semibold text-white shadow-[0_14px_32px_rgba(17,26,51,0.35)] hover:opacity-95"
+                >
+                  {isConnecting ? "Connecting..." : "Start Speaking"}
+                </Button>
+              </div>
+              <p className="mt-6 text-sm font-medium text-[#6b7897]">Joined by 1.2k candidates today</p>
+              {feedbackLoading ? (
+                <p className="mt-4 text-sm text-[#5b6e8f]">Generating speaking report...</p>
+              ) : null}
+              {lastFeedback ? (
+                <div className="mt-5 w-full max-w-3xl rounded-2xl border border-outline-variant/35 bg-white p-4 text-left">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-[#163f72]">Last Speaking Report</p>
+                    <Badge className="rounded-full bg-emerald-50 text-emerald-700">
+                      Band {lastFeedback.bandScore.toFixed(1)}
+                    </Badge>
+                  </div>
+                  <p className="mb-3 text-xs text-[#5b6e8f]">{lastFeedback.briefExplanation}</p>
+                  <div className="space-y-2">
+                    {lastFeedback.criteria.map((item) => (
+                      <div key={item.key}>
+                        <div className="mb-1 flex items-center justify-between">
+                          <p className="text-xs text-[#193055]">{item.label}</p>
+                          <p className="text-xs text-[#5b6e8f]">{item.score}%</p>
+                        </div>
+                        <Progress value={item.score} className="h-1.5" />
+                      </div>
+                    ))}
+                  </div>
+                  {lastFeedback.nextDrills.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {lastFeedback.nextDrills.map((drill) => (
+                        <Badge key={drill} variant="outline" className="border-amber-300 bg-amber-50 text-amber-700">
+                          Drill: {drill}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </Card>
+          ) : (
+            <Card className="mx-auto flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-3xl border-outline-variant/30 bg-surface-container-lowest px-6 py-8">
+              <div className="mb-6 text-center">
+                <div className="mx-auto mb-2 grid h-24 w-24 place-items-center rounded-full border-4 border-white bg-[#0b3f78] shadow-[0_10px_24px_rgba(11,63,120,0.35)]">
+                  <Image src="/logo.png" alt="AI Mascot" width={42} height={42} className="rounded-full" />
+                </div>
+                <Badge className="mb-2 rounded-full bg-white text-[#163f72]">{isMicOn ? "Listening" : "Standby"}</Badge>
+                <h2 className="text-5xl font-semibold text-[#103e70]" style={{ fontFamily: "var(--font-display)" }}>
+                  Speaking Room
+                </h2>
+                <p className="mt-1 text-xl text-[#5b6e8f]">Realtime conversation with AI examiner</p>
+              </div>
+
+              <div className="mx-auto flex w-full max-w-4xl min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+                {conversationItems.length === 0 ? (
+                  <p className="self-center rounded-2xl bg-white/80 px-5 py-3 text-base text-[#5b6e8f]">
+                    Waiting for the first examiner question...
+                  </p>
+                ) : (
+                  conversationItems.slice(-8).map((line) => {
+                    const isUser = line.role === "user";
+                    return (
+                      <div key={line.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+                        <div
+                          className={`max-w-[85%] rounded-3xl px-4 py-3 text-base leading-7 sm:text-lg sm:leading-8 ${
+                            isUser
+                              ? "bg-[#0d3f79] text-white shadow-[0_10px_22px_rgba(13,63,121,0.25)]"
+                              : "bg-white text-[#123f73] shadow-[0_8px_18px_rgba(25,28,30,0.10)]"
+                          }`}
+                        >
+                          {isUser ? (
+                            line.audioUrl ? (
+                              <audio controls src={line.audioUrl} className="h-10 w-full min-w-[220px]" />
+                            ) : (
+                              <span className="text-sm text-white/85">Recording...</span>
+                            )
+                          ) : (
+                            line.text
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={transcriptEndRef} />
+              </div>
+
+              <div className="mt-5 space-y-2 text-center">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#7a8aa8]">Capturing audio</p>
+                <div className="mx-auto flex items-center justify-center gap-1">
+                  {[1, 2, 3, 4, 5, 6, 7].map((bar) => (
+                    <span
+                      key={bar}
+                      className={`block w-1.5 rounded-full bg-[#0d3f79]/70 ${isMicOn ? "animate-pulse" : ""}`}
+                      style={{ height: `${(bar % 3) * 5 + 6}px`, animationDelay: `${bar * 60}ms` }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-5 flex items-center justify-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className={`size-12 rounded-full ${isMicOn ? "border-emerald-300 text-emerald-700" : ""}`}
+                  disabled={!isConnected}
+                  onClick={() => void (isMicOn ? stopMic() : startMic())}
+                >
+                  <Microphone size={18} weight="fill" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 rounded-full px-5 text-[#0d3f79]"
+                  disabled={isConnected || isConnecting}
+                  onClick={() => void connectSession()}
+                >
+                  {isConnecting ? "Connecting..." : "Reconnect"}
+                </Button>
+                <Button
+                  type="button"
+                  className="h-12 rounded-full bg-[#0d3f79] px-5 text-white hover:bg-[#0b3566]"
+                  disabled={!isConnected}
+                  onClick={disconnectSession}
+                >
+                  <PhoneDisconnect size={18} weight="bold" />
+                  <span>End Session</span>
+                </Button>
+              </div>
+
+              {speakingTurns.length > 0 ? (
+                <p className="mt-3 text-center text-xs text-[#7a8aa8]">
+                  Session turns: {speakingTurns.length}
+                </p>
+              ) : null}
+            </Card>
+          )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden px-4 py-5 sm:px-6 lg:px-8">
+        {content}
+      </div>
+    );
+  }
 
   return (
     <SidebarProvider
@@ -389,170 +732,8 @@ export default function SpeakingRoomScreen() {
       <div className="flex h-full flex-1 overflow-hidden" style={{ backgroundColor: "var(--color-surface)" }}>
         <Sidebar />
 
-        <main className="flex h-full min-w-0 flex-1 flex-col overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
-          <div className="grid gap-5 xl:grid-cols-[0.92fr_1.08fr]">
-            <div className="space-y-4">
-              <Card className="relative overflow-hidden rounded-3xl border-outline-variant/30 bg-linear-to-br from-[#e9f8ff] via-surface-container-lowest to-[#f3fbf6] p-6">
-                <div className="pointer-events-none absolute -right-12 -top-10 h-40 w-40 rounded-full bg-primary-container/60 blur-3xl" />
-                <div className="pointer-events-none absolute -left-10 bottom-0 h-32 w-32 rounded-full bg-[#ffe08a]/55 blur-3xl" />
-
-                <div className="relative">
-                  <div className="flex items-center gap-2">
-                    <Sparkle size={18} weight="bold" className="text-primary" />
-                    <p className="text-sm font-semibold text-on-surface">Virtual Speaking Room</p>
-                  </div>
-                  <h1 className="mt-2 text-2xl font-semibold text-on-surface" style={{ fontFamily: "var(--font-display)" }}>
-                    AI Examiner Room
-                  </h1>
-                  <p className="mt-2 text-sm leading-6 text-on-surface-variant">
-                    Practice IELTS speaking in realtime with your AI mascot examiner.
-                  </p>
-
-                  <div className="mt-5 flex items-center gap-4 rounded-2xl border border-outline-variant/30 bg-white/85 p-4">
-                    <div className="relative">
-                      <div className={`absolute inset-0 rounded-full ${isConnected ? "animate-ping bg-primary/30" : "bg-transparent"}`} />
-                      <div className="relative flex h-16 w-16 items-center justify-center rounded-full border border-outline-variant/30 bg-white">
-                        <Image src="/logo.png" alt="AI Mascot" width={48} height={48} className="rounded-full" />
-                      </div>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-on-surface-variant">
-                        IELTS Scholar Mascot
-                      </p>
-                      <p className="mt-1 text-sm leading-6 text-on-surface">{mascotMessage}</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="border-outline-variant/40 bg-white">
-                      Status: {sessionStatus}
-                    </Badge>
-                    <Badge variant="outline" className={`bg-white ${isMicOn ? "border-emerald-300 text-emerald-700" : "border-outline-variant/40"}`}>
-                      Mic: {isMicOn ? "On" : "Off"}
-                    </Badge>
-                  </div>
-                </div>
-              </Card>
-
-              <Card className="rounded-3xl border-outline-variant/30 bg-surface-container-lowest p-6">
-                <p className="mb-3 text-sm font-semibold text-on-surface">Room Controls</p>
-
-                <div className="space-y-3">
-                  <div>
-                    <p className="mb-1 text-xs font-medium text-on-surface-variant">Level</p>
-                    <Select value={level} onValueChange={(v) => setLevel(v as SpeakingLevel)}>
-                      <SelectTrigger className="h-11 rounded-xl bg-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        <SelectItem value="beginner">Beginner</SelectItem>
-                        <SelectItem value="intermediate">Intermediate</SelectItem>
-                        <SelectItem value="advanced">Advanced</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <p className="mb-1 text-xs font-medium text-on-surface-variant">Topic (optional)</p>
-                    <Input
-                      value={topic}
-                      onChange={(e) => setTopic(e.target.value)}
-                      placeholder="e.g. technology, education, environment"
-                      className="h-11 rounded-xl bg-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-5 flex flex-wrap items-center gap-2">
-                  {!isConnected ? (
-                    <Button
-                      type="button"
-                      disabled={isConnecting}
-                      onClick={() => void connectSession()}
-                      className="rounded-xl bg-primary text-white hover:bg-primary-fixed-variant"
-                    >
-                      <RadioButton size={15} weight="fill" />
-                      {isConnecting ? "Connecting..." : "Enter Room"}
-                    </Button>
-                  ) : (
-                    <Button type="button" variant="outline" className="rounded-xl" onClick={disconnectSession}>
-                      <PhoneDisconnect size={16} weight="bold" />
-                      Leave Room
-                    </Button>
-                  )}
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className={`rounded-xl ${isMicOn ? "border-emerald-300 text-emerald-700" : ""}`}
-                    disabled={!isConnected}
-                    onClick={() => void (isMicOn ? stopMic() : startMic())}
-                  >
-                    <Microphone size={16} weight="bold" />
-                    {isMicOn ? "Mute Mic" : "Unmute Mic"}
-                  </Button>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="rounded-xl"
-                    disabled={!isConnected}
-                    onClick={sendKickoff}
-                  >
-                    <PlayCircle size={16} weight="bold" />
-                    New Question
-                  </Button>
-                </div>
-              </Card>
-            </div>
-
-            <Card className="flex flex-col rounded-3xl border-outline-variant/30 bg-surface-container-lowest p-6">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <p className="shrink-0 text-sm font-semibold text-on-surface">Conversation</p>
-                <div className="flex items-center gap-1.5 text-xs text-on-surface-variant">
-                  <span className={`size-2 rounded-full ${isConnected ? "bg-emerald-500" : "bg-slate-400"}`} />
-                  {isConnected ? "Live" : "Offline"}
-                </div>
-              </div>
-              <div className="flex max-h-[70vh] min-h-[200px] flex-col gap-2 overflow-y-auto pr-1">
-                {transcript.length === 0 ? (
-                  <div className="my-auto rounded-2xl border border-dashed border-outline-variant/40 bg-white/70 px-4 py-8 text-center">
-                    <p className="text-sm text-on-surface-variant">
-                      Enter the room to start a realtime voice conversation.
-                    </p>
-                  </div>
-                ) : null}
-
-                {transcript.map((line) => {
-                  if (line.role === "system") {
-                    return (
-                      <p key={line.id} className="text-center text-[11px] text-on-surface-variant/60">
-                        {line.text}
-                      </p>
-                    );
-                  }
-                  const isUser = line.role === "user";
-                  return (
-                    <div key={line.id} className={`flex flex-col gap-0.5 ${isUser ? "items-end" : "items-start"}`}>
-                      <span className="px-1 text-[10px] font-semibold uppercase tracking-widest text-on-surface-variant/50">
-                        {isUser ? "You" : "Examiner"}
-                      </span>
-                      <div
-                        className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-6 ${
-                          isUser
-                            ? "rounded-tr-sm bg-primary text-white"
-                            : "rounded-tl-sm bg-primary-container/60 text-on-surface"
-                        }`}
-                      >
-                        {line.text}
-                      </div>
-                    </div>
-                  );
-                })}
-                <div ref={transcriptEndRef} />
-              </div>
-            </Card>
-          </div>
+        <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden px-4 py-5 sm:px-6 lg:px-8">
+          {content}
         </main>
       </div>
     </SidebarProvider>
