@@ -99,3 +99,32 @@ export type WritingPracticeAttempt = {
   created_at: string;
   updated_at: string;
 };
+
+export type StudyPlanDay = {
+  id: string;
+  user_id: string;
+  plan_date: string;
+  day_type: "weekday" | "weekend";
+  target_minutes: number;
+  is_mock_day: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StudyPlanItem = {
+  id: string;
+  user_id: string;
+  plan_day_id: string;
+  title: string;
+  description: string | null;
+  focus_area: string;
+  task_type: "writing" | "speaking" | "vocabulary" | "grammar" | "mock-test";
+  weakness_key: string | null;
+  weakness_label: string | null;
+  planned_minutes: number;
+  status: "pending" | "done";
+  sort_order: number;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};

@@ -412,3 +412,169 @@ begin
     add constraint writing_practice_attempts_exercise_mode_check
     check (exercise_mode in ('sentence-translation', 'topic-writing', 'speaking-live'));
 end $$;
+
+-- ============================================================
+-- Weekly study plan (2026-04-06)
+-- ============================================================
+
+create table if not exists public.study_plan_days (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  plan_date date not null,
+  day_type text not null check (day_type in ('weekday', 'weekend')),
+  target_minutes integer not null check (target_minutes between 10 and 600),
+  is_mock_day boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, plan_date)
+);
+
+create index if not exists idx_study_plan_days_user_date
+  on public.study_plan_days (user_id, plan_date asc);
+
+drop trigger if exists trg_study_plan_days_updated_at on public.study_plan_days;
+create trigger trg_study_plan_days_updated_at
+before update on public.study_plan_days
+for each row execute function public.set_updated_at();
+
+create table if not exists public.study_plan_items (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  plan_day_id uuid not null references public.study_plan_days(id) on delete cascade,
+  title text not null check (char_length(trim(title)) between 1 and 180),
+  description text,
+  focus_area text not null,
+  task_type text not null check (task_type in ('writing', 'speaking', 'vocabulary', 'grammar', 'mock-test')),
+  weakness_key text,
+  weakness_label text,
+  planned_minutes integer not null check (planned_minutes between 5 and 240),
+  status text not null default 'pending' check (status in ('pending', 'done')),
+  sort_order integer not null default 0,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_study_plan_items_user_day
+  on public.study_plan_items (user_id, plan_day_id, sort_order asc);
+
+create index if not exists idx_study_plan_items_user_status
+  on public.study_plan_items (user_id, status, created_at desc);
+
+drop trigger if exists trg_study_plan_items_updated_at on public.study_plan_items;
+create trigger trg_study_plan_items_updated_at
+before update on public.study_plan_items
+for each row execute function public.set_updated_at();
+
+alter table public.study_plan_days enable row level security;
+alter table public.study_plan_items enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'study_plan_days'
+      and policyname = 'study_plan_days_select_own'
+  ) then
+    create policy "study_plan_days_select_own"
+    on public.study_plan_days
+    for select
+    using (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'study_plan_days'
+      and policyname = 'study_plan_days_insert_own'
+  ) then
+    create policy "study_plan_days_insert_own"
+    on public.study_plan_days
+    for insert
+    with check (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'study_plan_days'
+      and policyname = 'study_plan_days_update_own'
+  ) then
+    create policy "study_plan_days_update_own"
+    on public.study_plan_days
+    for update
+    using (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'study_plan_days'
+      and policyname = 'study_plan_days_delete_own'
+  ) then
+    create policy "study_plan_days_delete_own"
+    on public.study_plan_days
+    for delete
+    using (auth.uid() = user_id);
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'study_plan_items'
+      and policyname = 'study_plan_items_select_own'
+  ) then
+    create policy "study_plan_items_select_own"
+    on public.study_plan_items
+    for select
+    using (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'study_plan_items'
+      and policyname = 'study_plan_items_insert_own'
+  ) then
+    create policy "study_plan_items_insert_own"
+    on public.study_plan_items
+    for insert
+    with check (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'study_plan_items'
+      and policyname = 'study_plan_items_update_own'
+  ) then
+    create policy "study_plan_items_update_own"
+    on public.study_plan_items
+    for update
+    using (auth.uid() = user_id);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'study_plan_items'
+      and policyname = 'study_plan_items_delete_own'
+  ) then
+    create policy "study_plan_items_delete_own"
+    on public.study_plan_items
+    for delete
+    using (auth.uid() = user_id);
+  end if;
+end $$;

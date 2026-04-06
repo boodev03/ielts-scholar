@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Image from "next/image";
 import {
   Cards,
+  CalendarBlank,
   ChartLineUp,
   DotsThree,
   FolderSimple,
@@ -88,6 +89,7 @@ function SidebarInner() {
     pathname?.startsWith("/vocabulary") ||
       pathname?.startsWith("/writing-practice") ||
       pathname?.startsWith("/speaking") ||
+      pathname?.startsWith("/plan") ||
       pathname?.startsWith("/progress")
   );
   const [practiceToolsManualOpen, setPracticeToolsManualOpen] = useState(!collapsed);
@@ -303,6 +305,21 @@ function SidebarInner() {
                     >
                       <MicrophoneStage size={15} weight="bold" />
                       <span className="truncate">Speaking</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      tooltip="Study Plan"
+                      onClick={() => router.push("/plan")}
+                      className={`h-8 rounded-lg px-2.5 pl-9 text-sm font-medium ${
+                        pathname?.startsWith("/plan")
+                          ? "bg-surface-container text-on-surface"
+                          : "text-on-surface hover:bg-surface-container-low"
+                      }`}
+                    >
+                      <CalendarBlank size={15} weight="bold" />
+                      <span className="truncate">Study Plan</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
 
