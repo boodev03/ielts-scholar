@@ -1,7 +1,12 @@
 "use client";
 
 import type { RefObject } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
+import { ArrowUp, Robot } from "@phosphor-icons/react";
 import { CursorText, Lightbulb, TrendUp } from "@phosphor-icons/react";
+import ReactMarkdown from "react-markdown";
 import { Languages, NotebookPen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,6 +68,158 @@ function accuracyTone(score: number) {
   if (score >= 85) return "text-emerald-700 bg-emerald-100 border-emerald-200";
   if (score >= 70) return "text-amber-700 bg-amber-100 border-amber-200";
   return "text-rose-700 bg-rose-100 border-rose-200";
+}
+
+const QUICK_PROMPTS = [
+  "What does this sentence mean?",
+  "Give me a hint",
+  "What's a key word here?",
+];
+
+type AiAssistPanelProps = {
+  currentSentence: string;
+  nativeLanguage: string;
+};
+
+function AiAssistPanel({ currentSentence, nativeLanguage }: AiAssistPanelProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [input, setInput] = useState("");
+
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: "/api/writing-practice/assist",
+        body: { currentSentence, nativeLanguage },
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  const { messages, sendMessage, status } = useChat({ transport });
+
+  const isBusy = status === "submitted" || status === "streaming";
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const submit = () => {
+    const text = input.trim();
+    if (!text || isBusy) return;
+    setInput("");
+    void sendMessage({ text });
+  };
+
+  const handleQuickPrompt = (prompt: string) => {
+    if (isBusy) return;
+    void sendMessage({ text: prompt });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    }
+  };
+
+  return (
+    <Card className="rounded-3xl border-outline-variant/30 bg-surface-container-lowest shadow-[0_10px_28px_rgba(25,28,30,0.05)]">
+      <div className="flex items-center gap-2 border-b border-outline-variant/20 px-5 py-3">
+        <Robot size={17} weight="bold" className="text-primary" />
+        <p className="text-sm font-semibold text-on-surface">AI Support</p>
+        <span className="ml-auto text-[11px] text-on-surface-variant/60">Ask anything about this sentence</span>
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="flex max-h-60 min-h-[80px] flex-col gap-3 overflow-y-auto px-5 py-3"
+      >
+        {messages.length === 0 ? (
+          <p className="text-xs italic text-on-surface-variant/60">
+            Ask about words, grammar, or how to phrase things in English.
+          </p>
+        ) : null}
+
+        {messages.map((msg) => {
+          const text = (msg.parts ?? [])
+            .filter((p) => p.type === "text")
+            .map((p) => ("text" in p ? (p.text as string) : ""))
+            .join("");
+          if (!text) return null;
+
+          return (
+            <div
+              key={msg.id}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-6 ${
+                  msg.role === "user"
+                    ? "bg-primary text-white"
+                    : "bg-surface-container-low text-on-surface"
+                }`}
+              >
+                {msg.role === "assistant" ? (
+                  <ReactMarkdown>{text}</ReactMarkdown>
+                ) : (
+                  text
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {isBusy ? (
+          <div className="flex justify-start">
+            <div className="rounded-2xl bg-surface-container-low px-3 py-2">
+              <span className="flex gap-1">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-on-surface-variant/50 [animation-delay:0ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-on-surface-variant/50 [animation-delay:150ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-on-surface-variant/50 [animation-delay:300ms]" />
+              </span>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {messages.length === 0 ? (
+        <div className="flex flex-wrap gap-1.5 px-5 pb-2">
+          {QUICK_PROMPTS.map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              onClick={() => handleQuickPrompt(prompt)}
+              className="rounded-full border border-outline-variant/35 bg-white px-2.5 py-1 text-[11px] text-on-surface-variant transition hover:border-primary/40 hover:text-primary"
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="flex items-center gap-2 border-t border-outline-variant/20 px-4 py-3">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={isBusy}
+          placeholder="Ask about a word or phrase..."
+          className="flex-1 rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm outline-none placeholder:text-on-surface-variant/50 focus:border-primary/50 disabled:opacity-60"
+        />
+        <Button
+          type="button"
+          size="icon"
+          onClick={submit}
+          disabled={isBusy || !input.trim()}
+          className="h-9 w-9 shrink-0 rounded-xl bg-primary text-white hover:bg-primary-fixed-variant disabled:opacity-50"
+        >
+          <ArrowUp size={15} weight="bold" />
+        </Button>
+      </div>
+    </Card>
+  );
 }
 
 type SetupPanelProps = {
@@ -215,6 +372,7 @@ type SentenceSectionProps = {
   historyEntries: Array<{ index: number; attempt: SentenceAttempt }>;
   currentSentenceIndex: number;
   currentSentence: string;
+  nativeLanguage: string;
   answer: string;
   evaluateLoading: boolean;
   currentAttempt: SentenceAttempt | null;
@@ -237,6 +395,7 @@ export function SentenceExerciseSection({
   historyEntries,
   currentSentenceIndex,
   currentSentence,
+  nativeLanguage,
   answer,
   evaluateLoading,
   currentAttempt,
@@ -418,6 +577,8 @@ export function SentenceExerciseSection({
             <p className="mt-2 text-sm text-on-surface-variant">{latestSubmission.feedback.briefExplanation}</p>
           </Card>
         ) : null}
+
+        <AiAssistPanel currentSentence={currentSentence} nativeLanguage={nativeLanguage} />
       </div>
     </div>
   );

@@ -520,6 +520,7 @@ export default function WritingPracticeScreen() {
                   historyEntries={historyEntries}
                   currentSentenceIndex={currentSentenceIndex}
                   currentSentence={currentSentence}
+                  nativeLanguage={nativeLanguage}
                   answer={answer}
                   evaluateLoading={evaluateLoading}
                   currentAttempt={currentAttempt}
